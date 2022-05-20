@@ -22,7 +22,7 @@ export class OpenseaListener extends SaleListener {
     super();
     this.contract = new ethers.Contract(WYVERN_EXCHANGE_ADDRESS, wyvernExchangeAbi, provider);
     this.blockCache = new QuickLRU({
-      maxSize: 10,
+      maxSize: 10
     });
   }
 
@@ -39,7 +39,7 @@ export class OpenseaListener extends SaleListener {
 
   async startHistorical() {
     this.blockCache = new QuickLRU({
-      maxSize: 100,
+      maxSize: 100
     });
     const filter = this.contract.filters.OrdersMatched();
     const queryFilter = this.contract.queryFilter.bind(this.contract);
@@ -52,11 +52,11 @@ export class OpenseaListener extends SaleListener {
     const fromBlock = 14228966; // events start here
     const logPaginator = new LogPaginator(10_000);
 
-    const orders = await logPaginator.paginateLogs(thunkedLogRequest, this.provider, {
+    const orders = (await logPaginator.paginateLogs(thunkedLogRequest, this.provider, {
       fromBlock,
       toBlock: 'latest',
       returnType: 'generator'
-    }) as Generator<Promise<HistoricalLogsChunk>, void, unknown>;
+    })) as Generator<Promise<HistoricalLogsChunk>, void, unknown>;
 
     const queue = new PQueue({
       concurrency: 50
@@ -64,16 +64,16 @@ export class OpenseaListener extends SaleListener {
 
     for await (const chunk of orders) {
       console.log(`Fetch ${chunk.events.length} events from block: ${chunk.fromBlock} to block: ${chunk.toBlock}`);
-      for(const event of chunk.events) {
-        queue.add(async () => {
-          await this.onOrdersMatched([event]);
-        }).catch(console.error);
-        if(queue.pending + queue.size >= 50) {
-          await queue.onIdle();
-        }
+      for (const event of chunk.events) {
+        queue
+          .add(async () => {
+            await this.onOrdersMatched([event]);
+          })
+          .catch(console.error);
       }
+      await queue.onEmpty();
     }
-    await queue.onEmpty();
+    await queue.onIdle();
   }
 
   private registerListener() {
@@ -128,14 +128,13 @@ export class OpenseaListener extends SaleListener {
   }
 
   private async getTransactionByHash(txHash: string): Promise<ethers.utils.BytesLike> {
-
     const tx = await this.provider.getTransaction(txHash);
     return tx.data;
   }
 
   private async getBlock(blockNumber: number): Promise<Block> {
     let block = this.blockCache.get(blockNumber);
-    if(!block) {  
+    if (!block) {
       block = await this.provider.getBlock(blockNumber);
       this.blockCache.set(blockNumber, block);
     }
