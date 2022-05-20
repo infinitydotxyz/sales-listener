@@ -27,8 +27,10 @@ async function historicalSales() {
   const salesHandler = new SalesHandler(getDb());
 
   opensea.on(SaleListenerEvent.Sale, (data) => {
-    // salesHandler.onSale(data);
-    console.log(data.sales)
+      if(data.sales.some((item) => item.collectionAddress === '0xbc4ca0eda7647a8ab7c2061c2e118a18a936f13d')) {
+          salesHandler.onSale(data);
+          console.log(data.sales)
+      }
   });
 
   await opensea.startHistorical();

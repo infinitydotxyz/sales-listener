@@ -11,6 +11,7 @@ import { ETHEREUM_WETH_ADDRESS, NULL_ADDRESS } from '@infinityxyz/lib/utils/cons
 import { LogPaginator } from '../../log-paginator/log-paginator';
 import { HistoricalLogsChunk } from '../../log-paginator/types';
 import QuickLRU from 'quick-lru';
+import PQueue from 'p-queue';
 
 export class OpenseaListener extends SaleListener {
   private contract: Contract;
@@ -57,12 +58,22 @@ export class OpenseaListener extends SaleListener {
       returnType: 'generator'
     }) as Generator<Promise<HistoricalLogsChunk>, void, unknown>;
 
+    const queue = new PQueue({
+      concurrency: 50
+    });
+
     for await (const chunk of orders) {
       console.log(`Fetch ${chunk.events.length} events from block: ${chunk.fromBlock} to block: ${chunk.toBlock}`);
       for(const event of chunk.events) {
-        await this.onOrdersMatched([event]);
+        queue.add(async () => {
+          await this.onOrdersMatched([event]);
+        }).catch(console.error);
+        if(queue.pending + queue.size >= 50) {
+          await queue.onIdle();
+        }
       }
     }
+    await queue.onEmpty();
   }
 
   private registerListener() {
@@ -109,7 +120,6 @@ export class OpenseaListener extends SaleListener {
         console.log(`Listener:[Opensea] fetched new order successfully: ${txHash}`);
         const { sales, totalPrice } = this.parseSaleOrders(saleOrders);
 
-        // await salesUpdater.saveTransaction({ sales, totalPrice });
         this.emit(SaleListenerEvent.Sale, { sales, totalPrice });
       }
     } catch (err) {
@@ -122,8 +132,6 @@ export class OpenseaListener extends SaleListener {
     const tx = await this.provider.getTransaction(txHash);
     return tx.data;
   }
-
-
 
   private async getBlock(blockNumber: number): Promise<Block> {
     let block = this.blockCache.get(blockNumber);
