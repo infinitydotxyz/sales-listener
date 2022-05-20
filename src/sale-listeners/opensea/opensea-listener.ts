@@ -10,14 +10,19 @@ import { ChainId, NftSale, TokenStandard } from '@infinityxyz/lib/types/core';
 import { ETHEREUM_WETH_ADDRESS, NULL_ADDRESS } from '@infinityxyz/lib/utils/constants';
 import { LogPaginator } from '../../log-paginator/log-paginator';
 import { HistoricalLogsChunk } from '../../log-paginator/types';
+import QuickLRU from 'quick-lru';
 
 export class OpenseaListener extends SaleListener {
   private contract: Contract;
   private cancelListener?: () => void;
+  private blockCache: QuickLRU<number, Block>;
 
   constructor(private provider: ethers.providers.JsonRpcProvider) {
     super();
     this.contract = new ethers.Contract(WYVERN_EXCHANGE_ADDRESS, wyvernExchangeAbi, provider);
+    this.blockCache = new QuickLRU({
+      maxSize: 10,
+    });
   }
 
   _start() {
@@ -31,7 +36,10 @@ export class OpenseaListener extends SaleListener {
     }
   }
 
-  async historical() {
+  async startHistorical() {
+    this.blockCache = new QuickLRU({
+      maxSize: 100,
+    });
     const filter = this.contract.filters.OrdersMatched();
     const queryFilter = this.contract.queryFilter.bind(this.contract);
 
@@ -39,8 +47,9 @@ export class OpenseaListener extends SaleListener {
       return await queryFilter(filter, fromBlock, toBlock);
     }
 
-    const fromBlock = 14120913;
-    const logPaginator = new LogPaginator();
+    // const fromBlock = 14120913; // block the contract was deployed at. Date: (Feb-01-2022 03:30:32 PM +UTC)
+    const fromBlock = 14228966; // events start here
+    const logPaginator = new LogPaginator(10_000);
 
     const orders = await logPaginator.paginateLogs(thunkedLogRequest, this.provider, {
       fromBlock,
@@ -50,7 +59,9 @@ export class OpenseaListener extends SaleListener {
 
     for await (const chunk of orders) {
       console.log(`Fetch ${chunk.events.length} events from block: ${chunk.fromBlock} to block: ${chunk.toBlock}`);
-      await this.onOrdersMatched(chunk.events);
+      for(const event of chunk.events) {
+        await this.onOrdersMatched([event]);
+      }
     }
   }
 
@@ -87,7 +98,7 @@ export class OpenseaListener extends SaleListener {
       break;
     }
     try {
-      const block: Block = await event.getBlock();
+      const block: Block = await this.getBlock(event.blockNumber);
       const decodedResponse: DecodedAtomicMatchInputs = this.contract.interface.decodeFunctionData(
         'atomicMatch_',
         response as ethers.utils.BytesLike
@@ -107,8 +118,21 @@ export class OpenseaListener extends SaleListener {
   }
 
   private async getTransactionByHash(txHash: string): Promise<ethers.utils.BytesLike> {
+
     const tx = await this.provider.getTransaction(txHash);
     return tx.data;
+  }
+
+
+
+  private async getBlock(blockNumber: number): Promise<Block> {
+    let block = this.blockCache.get(blockNumber);
+    if(!block) {  
+      block = await this.provider.getBlock(blockNumber);
+      this.blockCache.set(blockNumber, block);
+    }
+
+    return block;
   }
 
   private handleAtomicMatch(

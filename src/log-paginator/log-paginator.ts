@@ -14,6 +14,8 @@ import {
 } from './types';
 
 export class LogPaginator {
+  constructor(private optimizeAfterXEmptyRequests = 5) {}
+
   /**
    * paginateLogs handles paginating a log request over any number of blocks
    *
@@ -97,7 +99,7 @@ export class LogPaginator {
         const size = maxBlock - minBlock;
         const progress = Math.floor(((blockRange.from - blockRange.minBlock) / size) * 100 * 100) / 100;
 
-        if (pagesWithoutResults > 5) {
+        if (pagesWithoutResults > this.optimizeAfterXEmptyRequests) {
           try {
             const events = await thunkedLogRequest(blockRange.from, blockRange.maxBlock);
             const fromBlock = blockRange.minBlock;
