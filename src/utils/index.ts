@@ -12,3 +12,17 @@ export function trimLowerCase(str: string) {
 export const convertWeiToEther = (price: bigint): number => {
   return parseFloat(ethers.utils.formatEther(price.toString()));
 };
+
+export function getEnvVariable(name: string, required: false, defaultValue?: string): string | undefined;
+export function getEnvVariable(name: string, required: true, defaultValue?: string): string;
+export function getEnvVariable(name: string, required: boolean, defaultValue?: string) {
+  const value = process.env[name] ?? defaultValue;
+
+  if (value) {
+    return value;
+  }
+
+  if (required) {
+    throw new Error(`Failed to find environment variable: ${name}`);
+  }
+}
