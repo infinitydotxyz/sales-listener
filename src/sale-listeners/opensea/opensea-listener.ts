@@ -8,6 +8,8 @@ import { DecodedAtomicMatchInputs, TokenInfo } from './types';
 import { PreParsedNftSale, SaleSource } from '../../types';
 import { ChainId, NftSale, TokenStandard } from '@infinityxyz/lib/types/core';
 import { ETHEREUM_WETH_ADDRESS, NULL_ADDRESS } from '@infinityxyz/lib/utils/constants';
+import { LogPaginator } from '../../log-paginator/log-paginator';
+import { HistoricalLogsChunk } from '../../log-paginator/types';
 
 export class OpenseaListener extends SaleListener {
   private contract: Contract;
@@ -26,6 +28,29 @@ export class OpenseaListener extends SaleListener {
     if (this.cancelListener) {
       this.cancelListener();
       this.cancelListener = undefined;
+    }
+  }
+
+  async historical() {
+    const filter = this.contract.filters.OrdersMatched();
+    const queryFilter = this.contract.queryFilter.bind(this.contract);
+
+    async function thunkedLogRequest(fromBlock: number, toBlock: number | 'latest'): Promise<ethers.Event[]> {
+      return await queryFilter(filter, fromBlock, toBlock);
+    }
+
+    const fromBlock = 14120913;
+    const logPaginator = new LogPaginator();
+
+    const orders = await logPaginator.paginateLogs(thunkedLogRequest, this.provider, {
+      fromBlock,
+      toBlock: 'latest',
+      returnType: 'generator'
+    }) as Generator<Promise<HistoricalLogsChunk>, void, unknown>;
+
+    for await (const chunk of orders) {
+      console.log(`Fetch ${chunk.events.length} events from block: ${chunk.fromBlock} to block: ${chunk.toBlock}`);
+      await this.onOrdersMatched(chunk.events);
     }
   }
 

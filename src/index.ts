@@ -12,9 +12,7 @@ async function main() {
     const salesHandler = new SalesHandler(getDb());
 
     for (const listener of listeners) {
-
         listener.on(SaleListenerEvent.Sale, (data) => {
-            console.log(JSON.stringify(data, null, 2));
             salesHandler.onSale(data);
         });
         await listener.start();
